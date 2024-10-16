@@ -1,6 +1,6 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, 
-                             QLineEdit, QLabel, QComboBox, QInputDialog, QFileDialog, QSpinBox, QMessageBox)
+                             QLineEdit, QLabel, QComboBox, QInputDialog, QFileDialog, QMessageBox)
 from PyQt6.QtCore import Qt, QTimer
 from memory_manager.memory import MemoryManager
 from visualization.visualization import MemoryVisualization
@@ -27,9 +27,7 @@ class MemoryVisualizerApp(QMainWindow):
         # Timer for graph updates (every 10 seconds)
         self.graph_timer = QTimer(self)
         self.graph_timer.timeout.connect(self.update_graph)
-        self.graph_timer.start(10000)  # 30 FPS
-
-        
+        self.graph_timer.start(10000)
 
     def init_ui(self):
         central_widget = QWidget()
@@ -61,6 +59,12 @@ class MemoryVisualizerApp(QMainWindow):
         self.algorithm_combo.addItems(["First Fit", "Best Fit", "Worst Fit", "Next Fit"])
         self.algorithm_combo.currentTextChanged.connect(self.handle_algorithm_change)
         controls_layout.addWidget(self.algorithm_combo)
+
+        # Page Replacement Algorithm
+        self.page_algorithm_combo = QComboBox()
+        self.page_algorithm_combo.addItems(["None", "FIFO", "LRU", "LFU"])
+        self.page_algorithm_combo.currentTextChanged.connect(self.handle_page_algorithm_change)
+        controls_layout.addWidget(self.page_algorithm_combo)
 
         compact_button = QPushButton("Compact Memory")
         compact_button.clicked.connect(self.handle_compaction)
@@ -116,6 +120,10 @@ class MemoryVisualizerApp(QMainWindow):
         self.memory_manager.set_algorithm(algorithm)
         self.show_message(f"Allocation algorithm changed to {algorithm}")
 
+    def handle_page_algorithm_change(self, algorithm):
+        self.memory_manager.set_page_replacement_algorithm(algorithm)
+        self.show_message(f"Page replacement algorithm changed to {algorithm}")
+
     def handle_compaction(self):
         self.memory_manager.compact_memory()
         self.show_message("Memory compacted")
@@ -154,6 +162,7 @@ class MemoryVisualizerApp(QMainWindow):
         self.metrics_tracker.update()
         metrics_text = f"""
         Current Algorithm: {self.memory_manager.algorithm}
+        Page Replacement Algorithm: {self.memory_manager.page_replacement_algorithm}
         Allocated Memory: {self.metrics_tracker.get_allocation_percentage():.2f}%
         Fragmentation Ratio: {self.memory_manager.get_fragmentation_ratio():.2f}
         Allocation Success Rate: {self.memory_manager.get_allocation_success_rate():.2f}
