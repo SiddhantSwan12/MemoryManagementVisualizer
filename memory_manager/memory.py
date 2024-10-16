@@ -1,6 +1,7 @@
 import time
 from typing import List, Optional, Tuple
 import random
+from collections import deque
 
 class MemoryBlock:
     def __init__(self, start: int, size: int, is_free: bool = True, process_id: Optional[int] = None):
@@ -8,28 +9,70 @@ class MemoryBlock:
         self.size = size
         self.is_free = is_free
         self.process_id = process_id
+        self.timestamp = time.time()  # Track when the block was allocated
+        self.access_count = 0  # Track how many times the block was accessed
 
 class MemoryManager:
     def __init__(self, total_size: int):
         self.total_size = total_size
         self.blocks: List[MemoryBlock] = [MemoryBlock(0, total_size)]
         self.algorithm = "First Fit"
+        self.page_replacement_algorithm = "FIFO"  # Default page replacement algorithm
         self.failed_allocations = 0
         self.total_allocations = 0
         self.allocation_history = []
         self.compaction_count = 0
+        self.replacement_queue = deque()  # For FIFO and LRU tracking
 
     def allocate(self, size: int, process_id: int) -> Optional[int]:
         start_time = time.time()
         self.total_allocations += 1
         allocation_func = getattr(self, f"_{self.algorithm.lower().replace(' ', '_')}")
         result = allocation_func(size, process_id)
-        end_time = time.time()
         if result is None:
             self.failed_allocations += 1
+            # Invoke page replacement if allocation fails due to memory shortage
+            result = self.page_replace(size, process_id)
         else:
-            self.allocation_history.append((process_id, size, start_time, end_time - start_time))
+            self.allocation_history.append((process_id, size, start_time, time.time() - start_time))
         return result
+
+    def page_replace(self, size: int, process_id: int) -> Optional[int]:
+        print(f"Memory full, invoking {self.page_replacement_algorithm} for page replacement.")
+        if self.page_replacement_algorithm == "FIFO":
+            return self._fifo_page_replacement(size, process_id)
+        elif self.page_replacement_algorithm == "LRU":
+            return self._lru_page_replacement(size, process_id)
+        elif self.page_replacement_algorithm == "LFU":
+            return self._lfu_page_replacement(size, process_id)
+        return None
+
+    def _fifo_page_replacement(self, size: int, process_id: int) -> Optional[int]:
+        # FIFO removes the oldest allocated block
+        while self.replacement_queue:
+            block = self.replacement_queue.popleft()
+            if not block.is_free:
+                self.deallocate(block.start)
+                return self.allocate(size, process_id)
+        return None
+
+    def _lru_page_replacement(self, size: int, process_id: int) -> Optional[int]:
+        # LRU removes the least recently used block (smallest timestamp)
+        used_blocks = [block for block in self.blocks if not block.is_free]
+        if not used_blocks:
+            return None
+        least_recently_used = min(used_blocks, key=lambda b: b.timestamp)
+        self.deallocate(least_recently_used.start)
+        return self.allocate(size, process_id)
+
+    def _lfu_page_replacement(self, size: int, process_id: int) -> Optional[int]:
+        # LFU removes the least frequently used block
+        used_blocks = [block for block in self.blocks if not block.is_free]
+        if not used_blocks:
+            return None
+        least_frequently_used = min(used_blocks, key=lambda b: b.access_count)
+        self.deallocate(least_frequently_used.start)
+        return self.allocate(size, process_id)
 
     def _first_fit(self, size: int, process_id: int) -> Optional[int]:
         for i, block in enumerate(self.blocks):
@@ -59,9 +102,6 @@ class MemoryManager:
                 self._last_allocation_index = index
                 return self._split_block(index, size, process_id)
         return None
-    
-    def get_blocks(self) -> List[MemoryBlock]:
-        return self.blocks
 
     def _split_block(self, index: int, size: int, process_id: int) -> int:
         block = self.blocks[index]
@@ -71,6 +111,9 @@ class MemoryManager:
             block.size = size
         block.is_free = False
         block.process_id = process_id
+        block.timestamp = time.time()  # Update timestamp for LRU
+        block.access_count += 1  # Increase access count for LFU
+        self.replacement_queue.append(block)  # Track for FIFO/LRU
         return block.start
 
     def deallocate(self, start: int) -> bool:
@@ -85,26 +128,26 @@ class MemoryManager:
     def _merge_free_blocks(self) -> None:
         i = 0
         while i < len(self.blocks) - 1:
-            if self.blocks[i].is_free and self.blocks[i+1].is_free:
-                self.blocks[i].size += self.blocks[i+1].size
-                self.blocks.pop(i+1)
+            if self.blocks[i].is_free and self.blocks[i + 1].is_free:
+                self.blocks[i].size += self.blocks[i + 1].size
+                self.blocks.pop(i + 1)
             else:
                 i += 1
 
     def compact_memory(self) -> None:
         allocated_blocks = [b for b in self.blocks if not b.is_free]
         free_space = sum(b.size for b in self.blocks if b.is_free)
-        
+
         allocated_blocks.sort(key=lambda b: b.start)
-        
+
         current_position = 0
         for block in allocated_blocks:
             block.start = current_position
             current_position += block.size
-        
+
         if free_space > 0:
             allocated_blocks.append(MemoryBlock(current_position, free_space, is_free=True))
-        
+
         self.blocks = allocated_blocks
         self.compaction_count += 1
 
@@ -139,3 +182,11 @@ class MemoryManager:
     def set_algorithm(self, algorithm: str) -> None:
         if algorithm in ["First Fit", "Best Fit", "Worst Fit", "Next Fit"]:
             self.algorithm = algorithm
+
+    def set_page_replacement_algorithm(self, algorithm: str) -> None:
+        if algorithm in ["FIFO", "LRU", "LFU"]:
+            self.page_replacement_algorithm = algorithm
+
+    def get_blocks(self) -> List[MemoryBlock]:
+        """ Returns the current list of memory blocks. """
+        return self.blocks
